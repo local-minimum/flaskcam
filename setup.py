@@ -5,4 +5,4 @@ setup(name="FlaskCamServer",
       description="Library for serving and recording cameras",
       author="Martin Zackrisson",
       author_email="martin.zackrisson@gmail.com",
-      packages=['flask_cam'])
+      packages=['flask_cam'], requires=['flask'])
