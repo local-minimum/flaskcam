@@ -1,0 +1,13 @@
+*.pyc
+*.pyo
+*.tmp_config
+*.aux
+.git/*
+.ropeproject
+/experiments
+/build
+/dev
+/config
+.exclude.list
+/.idea
+nohup.out
