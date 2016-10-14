@@ -7,12 +7,13 @@ import flask_cam.config as cfg
 
 REQUESTS = {}
 
+
 def usage():
 
     p = Popen(['df', cfg.tmp_path], stdout=PIPE, stderr=PIPE)
     out, _ = p.communicate()
     out = tuple(l for i, l in enumerate(out.split(b"\n")) if i > 0 and l)[0]
-    out = {k: v for k, v in zip(("free", "used", "total", "percent"), re.sub(b' +', b' ', out).split(b' ')[1: -1])}
+    out = {k: v for k, v in zip(("free", "used", "total", "percent"), re.sub(b" +", b" ", out).split(b" ")[1: -1])}
     for k in out:
         try:
             out[k] = int(out[k])
@@ -68,6 +69,10 @@ class Recording(object):
             self._duration = Recording.convert_time_to_duration(duration)
 
         self._output = b''
+        self._running = True
+        self._stop_polling = False
+        self._completed_files = 0
+        self._progress = 0
 
     @staticmethod
     def convert_time_to_duration(duration_expression):
@@ -80,9 +85,39 @@ class Recording(object):
     @property
     def progress(self):
 
-        return 0
+        self._poll()
+        return self._progress
 
     @property
     def files_completed(self):
 
-        return 0
+        self._poll()
+        return self._completed_files
+
+    @property
+    def completed(self):
+
+        if self._running:
+            self._poll()
+        return self._running
+
+    def _poll(self):
+
+        if self._stop_polling:
+            return
+
+        addition = self._proc.stderr.readline()
+        if addition:
+            self._output += addition
+            recs = [Recording.convert_time_to_duration(line) for line in self._output.split(b'\r')]
+            if self._records_images:
+                self._files_completed = sum(0 if l is None else 1 for l in recs)
+                self._progress = self._files_completed / self._duration
+            else:
+                self._progress = max(l for l in recs if l is not None) / self._duration
+                if self._progress >= 1:
+                    self._files_completed = 1
+
+        elif not self._running:
+            self._stop_polling = True
+        self._running = self._proc.poll() is None
