@@ -8,6 +8,99 @@ import flask_cam.config as cfg
 REQUESTS = {}
 
 
+class Recording(object):
+
+    _PATTERN = re.compile(b'(rec |)(\d+):(\d{2})\.(\d{2})')
+
+    def __init__(self, process, records_images, duration, pattern):
+
+        self._process = process
+        self._records_images = records_images
+
+        if records_images:
+            self._duration = duration
+        else:
+            self._duration = Recording.convert_time_to_duration(duration)
+
+        self._pattern = pattern
+
+        self._output = b''
+        self._running = True
+        self._stop_polling = False
+        self._completed_files = 0
+        self._progress = 0
+
+    @staticmethod
+    def convert_time_to_duration(duration_expression):
+
+        match = Recording._PATTERN.match(duration_expression)
+        if match:
+            return sum(int(v) * (60 ** i) for i, v in enumerate(match.groups()[:0:-1]))
+        return None
+
+    @property
+    def progress(self):
+
+        self._poll()
+        return self._progress
+
+    @property
+    def files_completed(self):
+
+        self._poll()
+        return self._completed_files
+
+    def get_file_names(self):
+
+        return sorted(glob(self._pattern))
+
+    @property
+    def completed(self):
+
+        if self._running:
+            self._poll()
+        return not self._running
+
+    @property
+    def working(self):
+
+        if self._running:
+            self._poll()
+        return self._running
+
+    def _poll(self):
+
+        if self._stop_polling:
+            return
+
+        addition = self._process.stderr.readline()
+
+        if addition:
+
+            self._output += addition
+            recs = [Recording.convert_time_to_duration(line) for line in self._output.split(b'\r')]
+            if self._records_images:
+                self._files_completed = sum(0 if l is None else 1 for l in recs)
+                self._progress = self._files_completed / self._duration
+            else:
+                self._progress = max(l for l in recs if l is not None) / self._duration
+                if self._progress >= 1:
+                    self._files_completed = 1
+
+        elif not self._running:
+            self._stop_polling = True
+
+        self._running = self._process.poll() is None
+
+
+def get_recording(request_id) -> Recording:
+
+    if request_id in REQUESTS:
+        return REQUESTS[request_id]
+    else:
+        return None
+
+
 def is_processing(request_id):
 
     return request_id in REQUESTS and REQUESTS[request_id].working
@@ -56,80 +149,13 @@ def record(request_id, video_format="jpeg", times=10, fps=10, size=None, device=
 
     out = get_stream_output(request_id, times if is_photos else "0", video_format)
     cmd += ['-o', os.path.join(cfg.tmp_path, out)]
-    REQUESTS[request_id] = Recording(Popen(cmd, stdout=PIPE, stderr=PIPE), is_photos, times)
 
+    cmd =[str(v) for v in cmd]
 
-class Recording(object):
+    out_pattern = get_stream_output(request_id, "*", video_format)
 
-    _PATTERN = re.compile(b'(rec |)(\d+):(\d{2})\.(\d{2})')
-
-    def __init__(self, process, records_images, duration):
-
-        self._proc = process
-        self._records_images = records_images
-
-        if records_images:
-            self._duration = duration
-        else:
-            self._duration = Recording.convert_time_to_duration(duration)
-
-        self._output = b''
-        self._running = True
-        self._stop_polling = False
-        self._completed_files = 0
-        self._progress = 0
-
-    @staticmethod
-    def convert_time_to_duration(duration_expression):
-
-        match = Recording._PATTERN.match(duration_expression)
-        if match:
-            return sum(int(v) * (60 ** i) for i, v in enumerate(match.groups()[:0:-1]))
-        return None
-
-    @property
-    def progress(self):
-
-        self._poll()
-        return self._progress
-
-    @property
-    def files_completed(self):
-
-        self._poll()
-        return self._completed_files
-
-    @property
-    def completed(self):
-
-        if self._running:
-            self._poll()
-        return not self._running
-
-    @property
-    def working(self):
-
-        if self._running:
-            self._poll()
-        return self._running
-
-    def _poll(self):
-
-        if self._stop_polling:
-            return
-
-        addition = self._proc.stderr.readline()
-        if addition:
-            self._output += addition
-            recs = [Recording.convert_time_to_duration(line) for line in self._output.split(b'\r')]
-            if self._records_images:
-                self._files_completed = sum(0 if l is None else 1 for l in recs)
-                self._progress = self._files_completed / self._duration
-            else:
-                self._progress = max(l for l in recs if l is not None) / self._duration
-                if self._progress >= 1:
-                    self._files_completed = 1
-
-        elif not self._running:
-            self._stop_polling = True
-        self._running = self._proc.poll() is None
+    REQUESTS[request_id] = Recording(
+        Popen(cmd, stdout=PIPE, stderr=PIPE),
+        is_photos,
+        times,
+        os.path.join(cfg.tmp_path, out_pattern))
