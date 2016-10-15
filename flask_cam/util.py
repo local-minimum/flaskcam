@@ -54,7 +54,7 @@ def record(request_id, video_format="jpeg", times=10, fps=10, size=None, device=
     if device:
         cmd += ['-c', device]
 
-    out = get_stream_output(request_id, times if is_photos else "0", request_id)
+    out = get_stream_output(request_id, times if is_photos else "0", video_format)
     cmd += ['-o', os.path.join(cfg.tmp_path, out)]
     REQUESTS[request_id] = Recording(Popen(cmd, stdout=PIPE, stderr=PIPE), is_photos, times)
 
