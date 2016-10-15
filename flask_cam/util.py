@@ -8,6 +8,11 @@ import flask_cam.config as cfg
 REQUESTS = {}
 
 
+def is_processing(request_id):
+
+    return request_id in REQUESTS and REQUESTS[request_id].working
+
+
 def usage():
 
     p = Popen(['df', cfg.tmp_path], stdout=PIPE, stderr=PIPE)
@@ -96,6 +101,13 @@ class Recording(object):
 
     @property
     def completed(self):
+
+        if self._running:
+            self._poll()
+        return not self._running
+
+    @property
+    def working(self):
 
         if self._running:
             self._poll()
